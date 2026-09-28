@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>シマフクロウ カーソル追従</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="viewCanvas" aria-label="カーソル方向を向くシマフクロウ"></canvas>
+<script>
+(() => {
+'use strict';
+const FRAME_COUNT = 92;
+const DPR_LIMIT = 2;
+const FOLLOW = 11; // 追従速度。大きすぎるとマウスの微振動も拾う
+const canvas = document.getElementById('viewCanvas');
+const ctx = canvas.getContext('2d', {alpha:false, desynchronized:true});
+const frames = new Array(FRAME_COUNT);
+let current = (FRAME_COUNT - 1) / 2;
+let target = current;
+let lastTime = performance.now();
+let lastIndex = -1;
+ctx.imageSmoothingEnabled = true;
+ctx.imageSmoothingQuality = 'high';
+
+function frameUrl(i){return `frames/frame_${String(i+1).padStart(4,'0')}.webp`;}
+function resize(){
+  const dpr=Math.min(devicePixelRatio||1,DPR_LIMIT);
+  const w=Math.round(innerWidth*dpr),h=Math.round(innerHeight*dpr);
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;lastIndex=-1;}
+}
+async function preload(){
+  await Promise.all(Array.from({length: FRAME_COUNT}, async (_,i)=>{
+    const img=new Image();
+    img.decoding='async';
+    img.src=frameUrl(i);
+    await img.decode();
+    frames[i]=img;
+  }));
+  resize();
+  draw(Math.round(current));
+  lastIndex=Math.round(current);
+  requestAnimationFrame(animate);
+}
+function setTarget(clientX){
+  // 左端=左向き、中央=正面、右端=右向き
+  const nx=Math.max(0,Math.min(1,clientX/Math.max(1,innerWidth)));
+  target=nx*(FRAME_COUNT-1);
+}
+function draw(i){
+  const img=frames[i]; if(!img)return;
+  const cw=canvas.width,ch=canvas.height;
+  const scale=Math.max(cw/img.naturalWidth,ch/img.naturalHeight);
+  const w=img.naturalWidth*scale,h=img.naturalHeight*scale;
+  ctx.drawImage(img,(cw-w)/2,(ch-h)/2,w,h);
+}
+function animate(now){
+  const dt=Math.min((now-lastTime)/1000,0.033); lastTime=now;
+  // FPS非依存の滑らかな追従。カーソル停止時は正確な向きまで収束する
+  const k=1-Math.exp(-FOLLOW*dt);
+  current+=(target-current)*k;
+  if(Math.abs(target-current)<0.01) current=target;
+  const index=Math.max(0,Math.min(FRAME_COUNT-1,Math.round(current)));
+  if(index!==lastIndex){draw(index);lastIndex=index;}
+  requestAnimationFrame(animate);
+}
+window.addEventListener('pointermove',e=>setTarget(e.clientX),{passive:true});
+window.addEventListener('pointerdown',e=>setTarget(e.clientX),{passive:true});
+window.addEventListener('resize',resize,{passive:true});
+resize(); preload().catch(console.error);
+})();
+</script>
+</body>
+</html>
