@@ -17,10 +17,15 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
 const FRAME_COUNT = 92;
 const DPR_LIMIT = 2;
 const FOLLOW = 11; // 追従速度。大きすぎるとマウスの微振動も拾う
+// 各フレームまでの「見た目の変化量」の累積（0〜1）。フレーム間の画素差分から算出。
+// 正面付近などほぼ静止しているフレームが続く区間をカーソル移動で素早く通過させ、
+// どの位置でも同じペースで首が回るようにするための対応表。
+const MOTION = [0.0000,0.0165,0.0312,0.0456,0.0602,0.0730,0.0828,0.0889,0.1052,0.1156,0.1344,0.1488,0.1637,0.1728,0.1759,0.1782,0.1812,0.1849,0.1870,0.1900,0.1922,0.1977,0.2124,0.2269,0.2451,0.2564,0.2739,0.2859,0.2916,0.3072,0.3215,0.3402,0.3515,0.3658,0.3816,0.3876,0.4036,0.4186,0.4335,0.4484,0.4632,0.4791,0.4856,0.5010,0.5151,0.5259,0.5446,0.5587,0.5741,0.5793,0.5822,0.5853,0.5878,0.5920,0.5952,0.5981,0.6018,0.6151,0.6272,0.6432,0.6615,0.6761,0.6916,0.6978,0.7118,0.7231,0.7388,0.7568,0.7706,0.7874,0.7937,0.8076,0.8190,0.8347,0.8511,0.8667,0.8833,0.8899,0.8981,0.9145,0.9296,0.9456,0.9608,0.9769,0.9842,0.9860,0.9890,0.9908,0.9946,0.9961,0.9985,1.0000];
+const CENTER_FRAME = 52; // 画面中央で表示する正面向きフレーム（0始まり = frame_0053）
 const canvas = document.getElementById('viewCanvas');
 const ctx = canvas.getContext('2d', {alpha:false, desynchronized:true});
 const frames = new Array(FRAME_COUNT);
-let current = (FRAME_COUNT - 1) / 2;
+let current = 0.5; // 画面上の位置（0=左端〜1=右端）でイージングする
 let target = current;
 let lastTime = performance.now();
 let lastIndex = -1;
@@ -42,14 +47,23 @@ async function preload(){
     frames[i]=img;
   }));
   resize();
-  draw(Math.round(current));
-  lastIndex=Math.round(current);
+  lastIndex=posToFrame(current);
+  draw(lastIndex);
   requestAnimationFrame(animate);
+}
+// 画面位置(0〜1) → フレーム番号。左半分・右半分それぞれで見た目の変化量が均等になるよう割り当てる
+function posToFrame(pos){
+  const mc=MOTION[CENTER_FRAME];
+  const m=pos<0.5 ? (pos/0.5)*mc : mc+((pos-0.5)/0.5)*(1-mc);
+  let i=0;
+  while(i<FRAME_COUNT-2 && MOTION[i+1]<m) i++;
+  const span=MOTION[i+1]-MOTION[i];
+  const f=i+(span>0 ? (m-MOTION[i])/span : 0);
+  return Math.max(0,Math.min(FRAME_COUNT-1,Math.round(f)));
 }
 function setTarget(clientX){
   // 左端=左向き、中央=正面、右端=右向き
-  const nx=Math.max(0,Math.min(1,clientX/Math.max(1,innerWidth)));
-  target=nx*(FRAME_COUNT-1);
+  target=Math.max(0,Math.min(1,clientX/Math.max(1,innerWidth)));
 }
 function draw(i){
   const img=frames[i]; if(!img)return;
@@ -63,8 +77,8 @@ function animate(now){
   // FPS非依存の滑らかな追従。カーソル停止時は正確な向きまで収束する
   const k=1-Math.exp(-FOLLOW*dt);
   current+=(target-current)*k;
-  if(Math.abs(target-current)<0.01) current=target;
-  const index=Math.max(0,Math.min(FRAME_COUNT-1,Math.round(current)));
+  if(Math.abs(target-current)<0.0001) current=target;
+  const index=posToFrame(current);
   if(index!==lastIndex){draw(index);lastIndex=index;}
   requestAnimationFrame(animate);
 }
